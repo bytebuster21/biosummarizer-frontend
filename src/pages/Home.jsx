@@ -1,40 +1,299 @@
-import { useState } from "react";
-import { getGraph, summarizePaper, uploadPaper } from "../api/client";
+import React, { useState, useEffect } from "react";
+import {
+  uploadPaper,
+  getSamplePapers,
+  loadSamplePaper,
+  summarizePaper,
+  getGraph,
+  getPaper,
+} from "../api/client";
+import Navbar from "../components/Navbar";
 import SummaryView from "../components/SummaryView";
 import KnowledgeGraphViewer from "../components/KnowledgeGraphViewer";
+import RelatedLiterature from "../components/RelatedLiterature";
+import PaperQA from "../components/PaperQA";
+import ExportModal from "../components/ExportModal";
 
 export default function Home() {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState(null);
-  const [graph, setGraph] = useState(null);
-  const [title, setTitle] = useState("");
+  const [samplePapers, setSamplePapers] = useState([]);
+  const [currentPaper, setCurrentPaper] = useState(null);
+  const [summaryData, setSummaryData] = useState(null);
+  const [graphData, setGraphData] = useState(null);
+  const [entities, setEntities] = useState([]);
+  const [activeTab, setActiveTab] = useState("summary"); // "summary" | "graph" | "literature" | "qa" | "text"
   const [error, setError] = useState("");
+  const [showExportModal, setShowExportModal] = useState(false);
 
-  const selectFile = (files) => { const selected = files?.[0]; if (selected) { setFile(selected); setSummary(null); setGraph(null); setError(""); } };
-  const summarize = async (event) => {
-    event.preventDefault(); if (!file) return;
-    setLoading(true); setError(""); setSummary(null); setGraph(null);
+  // Load sample papers list on mount
+  useEffect(() => {
+    getSamplePapers()
+      .then(setSamplePapers)
+      .catch((e) => console.error("Could not load sample benchmark papers:", e));
+  }, []);
+
+  const processPaperAnalysis = async (paperId) => {
+    setLoading(true);
+    setError("");
     try {
-      const uploaded = await uploadPaper(file);
-      if (uploaded.error) throw new Error(uploaded.error);
-      setTitle(uploaded.title || file.name.replace(/\.pdf$/i, ""));
-      const [summaryResult, graphResult] = await Promise.all([summarizePaper(uploaded.id), getGraph(uploaded.id)]);
-      if (summaryResult.error) throw new Error(summaryResult.error);
-      setSummary(summaryResult.summary); setGraph(graphResult);
-    } catch (err) { setError(err.message || "We could not analyze that paper. Confirm the backend is running and try again."); }
-    finally { setLoading(false); }
+      // Parallel fetch summary and graph
+      const [sumRes, grpRes, paperDetail] = await Promise.all([
+        summarizePaper(paperId),
+        getGraph(paperId),
+        getPaper(paperId),
+      ]);
+
+      setCurrentPaper(paperDetail);
+      setSummaryData(sumRes);
+      setGraphData(grpRes);
+      setEntities(grpRes.entities || grpRes.nodes || []);
+      setActiveTab("summary");
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to analyze paper. Please check backend connection.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return <main className="bio-app">
-    <header className="home-nav"><a className="brand" href="#top"><span className="brand-orbit">✦</span><span>Bio<span>Lens</span></span></a><div className="nav-note"><i /> Research intelligence, made readable</div></header>
-    <section className="hero" id="top"><div className="eyebrow">BIOMEDICAL PAPER SUMMARIZER</div><h1>Understand every paper.<br /><span>From evidence to insight.</span></h1><p>Upload a research paper to generate a clear summary, highlight the key biomedical terms, and explore the relationships behind the science.</p></section>
-    <section className="upload-card"><div className="upload-heading"><div><div className="step">01 · ADD A PAPER</div><h2>Start with a research paper</h2><p>We support biomedical articles, preprints, and clinical trial reports.</p></div><span className="supported">PDF · up to 25 MB</span></div><form onSubmit={summarize}><label className={`drop-zone ${dragging ? "dragging" : ""} ${file ? "has-file" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); selectFile(event.dataTransfer.files); }}><input type="file" accept="application/pdf,.pdf" onChange={(event) => selectFile(event.target.files)} /><span className="upload-glyph">↑</span><strong>{file ? "Paper ready to analyze" : "Drop your paper here"}</strong><small>{file ? file.name : "or click to browse your files"}</small></label><div className="upload-footer"><span className="file-label">{file ? <><b>PDF</b>{file.name}</> : "No paper selected"}</span><button className="summarize-button" disabled={!file || loading}>{loading ? <><i className="spinner" /> Reading and mapping the paper…</> : <>Summarize paper <span>→</span></>}</button></div></form></section>
-    {error && <div className="notice error"><b>Analysis failed</b><span>{error}</span></div>}
-    {title && !error && <div className="notice success"><b>✓ Paper analyzed</b><span>{title}</span></div>}
-    {(loading || summary) && <section className="results"><div className="results-heading"><div><div className="step">02 · YOUR RESEARCH BRIEF</div><h2>{title || "Generating your research brief"}</h2></div><span className="verified"><i /> Grounded in uploaded paper</span></div><div className="results-grid"><div className="result-card summary-card"><SummaryView summary={summary} loading={loading} /></div><div className="result-card graph-card"><div className="graph-intro"><div><h3>Knowledge graph</h3><p>Explore the diseases, chemicals, genes, and concepts found in this paper.</p></div><span className="graph-icon">⌘</span></div>{loading ? <Loading label="Extracting scientific entities…" /> : <KnowledgeGraphViewer graph={graph} />}</div></div></section>}
-    <section className="feature-strip"><div><span>01</span><b>Plain language</b><p>Translate complex results into a patient-friendly explanation.</p></div><div><span>02</span><b>Technical detail</b><p>Keep the study design, outcomes, and scientific terminology intact.</p></div><div><span>03</span><b>Connected concepts</b><p>Open trusted external sources directly from highlighted terms.</p></div></section>
-  </main>;
+  const handleFileUpload = async (selectedFile) => {
+    if (!selectedFile) return;
+    setFile(selectedFile);
+    setLoading(true);
+    setError("");
+    try {
+      const uploaded = await uploadPaper(selectedFile);
+      if (uploaded.error) throw new Error(uploaded.error);
+      await processPaperAnalysis(uploaded.id);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Could not upload and parse the PDF document.");
+      setLoading(false);
+    }
+  };
+
+  const handleSelectSample = async (sampleId) => {
+    setLoading(true);
+    setError("");
+    try {
+      const loaded = await loadSamplePaper(sampleId);
+      if (loaded.error) throw new Error(loaded.error);
+      await processPaperAnalysis(loaded.id);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to load sample paper.");
+      setLoading(false);
+    }
+  };
+
+  const hasData = Boolean(currentPaper && (summaryData || graphData));
+
+  return (
+    <div className="biolens-root">
+      <Navbar
+        hasData={hasData}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onExportClick={() => setShowExportModal(true)}
+      />
+
+      <main className="biolens-main-content">
+        {/* Top Hero Section */}
+        <section className="biolens-hero">
+          <div className="hero-badge">
+            <span className="badge-sparkle">✦</span> AI-Powered Biomedical Evidence Synthesis & KG Hub
+          </div>
+          <h1>
+            From Biomedical Literature to <span className="gradient-text">Structured Discovery.</span>
+          </h1>
+          <p className="hero-subtext">
+            Upload biomedical papers or choose a benchmark clinical trial to generate multi-perspective summaries,
+            interactive semantic knowledge graphs, evidence grounding, and 1-click jumps to NCBI, ClinVar, UniProt, and PubChem.
+          </p>
+
+          {/* Benchmark Preset Papers Bar */}
+          {samplePapers && samplePapers.length > 0 && (
+            <div className="sample-presets-bar">
+              <span className="presets-label">⚡ Try Benchmark Papers:</span>
+              <div className="preset-buttons">
+                {samplePapers.map((s) => (
+                  <button
+                    key={s.id}
+                    className="preset-pill-btn"
+                    onClick={() => handleSelectSample(s.id)}
+                    disabled={loading}
+                  >
+                    <span className="preset-cat">{s.category}</span>
+                    <span className="preset-title">{s.title.slice(0, 48)}...</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Upload Card */}
+        <section className="upload-section-card">
+          <div
+            className={`drop-zone-box ${dragging ? "dragging" : ""} ${file ? "has-file" : ""}`}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              if (e.dataTransfer.files?.[0]) {
+                handleFileUpload(e.dataTransfer.files[0]);
+              }
+            }}
+          >
+            <input
+              type="file"
+              id="file-input"
+              accept="application/pdf,.pdf"
+              onChange={(e) => {
+                if (e.target.files?.[0]) {
+                  handleFileUpload(e.target.files[0]);
+                }
+              }}
+            />
+            <label htmlFor="file-input" className="drop-zone-inner">
+              <div className="upload-icon-circle">📄</div>
+              <h3>{file ? file.name : "Drop your biomedical research paper (PDF) here"}</h3>
+              <p>{file ? "Paper uploaded. Processing..." : "or click to browse from your computer (Max 25MB)"}</p>
+              <div className="supported-formats">Supports Clinical Trials, Preprints, Review Papers & PubMed Articles</div>
+            </label>
+          </div>
+
+          {error && (
+            <div className="error-alert-banner">
+              <span className="alert-icon">⚠️</span>
+              <div>
+                <strong>Analysis Notice:</strong> {error}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Analysis Results Workspace */}
+        {(loading || hasData) && (
+          <section className="workspace-section">
+            <div className="workspace-header">
+              <div className="paper-title-meta">
+                <span className="meta-tag">RESEARCH SYNTHESIS</span>
+                <h2>{currentPaper?.title || "Analyzing Document..."}</h2>
+              </div>
+
+              {/* Tab Navigation */}
+              <div className="workspace-tab-bar">
+                <button
+                  className={`ws-tab-btn ${activeTab === "summary" ? "active" : ""}`}
+                  onClick={() => setActiveTab("summary")}
+                >
+                  📑 Research Brief
+                </button>
+                <button
+                  className={`ws-tab-btn ${activeTab === "graph" ? "active" : ""}`}
+                  onClick={() => setActiveTab("graph")}
+                >
+                  🕸️ Knowledge Graph
+                </button>
+                <button
+                  className={`ws-tab-btn ${activeTab === "literature" ? "active" : ""}`}
+                  onClick={() => setActiveTab("literature")}
+                >
+                  📚 Related Literature
+                </button>
+                <button
+                  className={`ws-tab-btn ${activeTab === "qa" ? "active" : ""}`}
+                  onClick={() => setActiveTab("qa")}
+                >
+                  💬 Ask the Paper (Q&A)
+                </button>
+                <button
+                  className={`ws-tab-btn ${activeTab === "text" ? "active" : ""}`}
+                  onClick={() => setActiveTab("text")}
+                >
+                  📄 Source Text
+                </button>
+              </div>
+            </div>
+
+            {/* Tab Panes */}
+            <div className="workspace-content-pane">
+              {activeTab === "summary" && (
+                <SummaryView
+                  summaryData={summaryData}
+                  loading={loading}
+                  entities={entities}
+                />
+              )}
+
+              {activeTab === "graph" && (
+                <KnowledgeGraphViewer
+                  graph={graphData}
+                  loading={loading}
+                />
+              )}
+
+              {activeTab === "literature" && (
+                <RelatedLiterature paperId={currentPaper?.id} />
+              )}
+
+              {activeTab === "qa" && (
+                <PaperQA
+                  paperId={currentPaper?.id}
+                  paperTitle={currentPaper?.title}
+                />
+              )}
+
+              {activeTab === "text" && (
+                <div className="source-text-view">
+                  <div className="source-text-header">
+                    <h4>Original Extracted Paper Text</h4>
+                    <span>{currentPaper?.original_text?.length || 0} characters</span>
+                  </div>
+                  <pre className="raw-text-box">{currentPaper?.original_text}</pre>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Feature Highlights Footer Strip */}
+        <section className="feature-grid-strip">
+          <div className="feature-item">
+            <span className="feature-num">01</span>
+            <h4>Tri-View Multi-Perspective Synthesis</h4>
+            <p>Switch between Patient Layman language, Clinical & PICO deep-dive, and structured academic sections.</p>
+          </div>
+          <div className="feature-item">
+            <span className="feature-num">02</span>
+            <h4>Universal Database Resolver</h4>
+            <p>1-click deep links for genes, mutations, drugs, and diseases to NCBI, ClinVar, UniProt, PubChem, and DrugBank.</p>
+          </div>
+          <div className="feature-item">
+            <span className="feature-num">03</span>
+            <h4>Live PubMed Discovery & Grounded Q&A</h4>
+            <p>Query related literature via NCBI E-Utilities API and ask questions with verifiable sentence citations.</p>
+          </div>
+        </section>
+      </main>
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <ExportModal
+          paper={currentPaper}
+          summaryData={summaryData}
+          graph={graphData}
+          onClose={() => setShowExportModal(false)}
+        />
+      )}
+    </div>
+  );
 }
-function Loading({ label }) { return <div className="loading"><i className="spinner" />{label}</div>; }
