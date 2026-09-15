@@ -265,24 +265,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* Feature Highlights Footer Strip */}
-        <section className="feature-grid-strip">
-          <div className="feature-item">
-            <span className="feature-num">01</span>
-            <h4>Tri-View Multi-Perspective Synthesis</h4>
-            <p>Switch between Patient Layman language, Clinical & PICO deep-dive, and structured academic sections.</p>
-          </div>
-          <div className="feature-item">
-            <span className="feature-num">02</span>
-            <h4>Universal Database Resolver</h4>
-            <p>1-click deep links for genes, mutations, drugs, and diseases to NCBI, ClinVar, UniProt, PubChem, and DrugBank.</p>
-          </div>
-          <div className="feature-item">
-            <span className="feature-num">03</span>
-            <h4>Live PubMed Discovery & Grounded Q&A</h4>
-            <p>Query related literature via NCBI E-Utilities API and ask questions with verifiable sentence citations.</p>
-          </div>
-        </section>
       </main>
 
       {/* Export Modal */}
