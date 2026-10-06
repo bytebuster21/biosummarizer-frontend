@@ -1,9 +1,50 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 
 export default function SummaryView({ summaryData, loading, entities = [] }) {
   const [viewMode, setViewMode] = useState("plain"); // "plain" | "clinical" | "structured" | "highlights"
   const [highlightKeywords, setHighlightKeywords] = useState(true);
   const [selectedEntity, setSelectedEntity] = useState(null);
+
+  // Text-To-Speech (TTS) State
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [speechRate, setSpeechRate] = useState(1.0);
+  const [selectedVoice, setSelectedVoice] = useState("");
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [speakingTextSnippet, setSpeakingTextSnippet] = useState("");
+  const synthRef = useRef(null);
+  const utteranceRef = useRef(null);
+
+  // Initialize Speech Synthesis & Load Voices
+  useEffect(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      synthRef.current = window.speechSynthesis;
+
+      const populateVoices = () => {
+        const voices = synthRef.current.getVoices();
+        // Filter primarily English voices or all available
+        const enVoices = voices.filter((v) => v.lang.startsWith("en") || v.lang.startsWith("en-"));
+        const displayVoices = enVoices.length > 0 ? enVoices : voices;
+        setAvailableVoices(displayVoices);
+        if (displayVoices.length > 0 && !selectedVoice) {
+          // Prefer natural or neural voice if found
+          const defaultVoice = displayVoices.find((v) => v.name.includes("Natural") || v.name.includes("Neural") || v.default) || displayVoices[0];
+          setSelectedVoice(defaultVoice.name);
+        }
+      };
+
+      populateVoices();
+      if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = populateVoices;
+      }
+    }
+
+    return () => {
+      if (synthRef.current) {
+        synthRef.current.cancel();
+      }
+    };
+  }, []);
 
   // Map of entities for rapid lookup
   const entityMap = useMemo(() => {
@@ -55,14 +96,126 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
     });
   };
 
+  const multi = summaryData?.multiview || (typeof summaryData === "object" ? summaryData : null);
+  const plainText = multi?.plain_language || (typeof summaryData === "string" ? summaryData : "");
+  const clinicalText = multi?.clinical_summary || summaryData?.summary || plainText;
+  const sections = multi?.structured_sections || {};
+  const pico = multi?.pico || {};
+  const highlights = multi?.key_highlights || [];
+  const evidence = multi?.evidence_grounding || [];
+  const groundedScore = multi?.groundedness_score || 0.94;
+
+  // Compute text to read based on current active view
+  const currentViewText = useMemo(() => {
+    if (viewMode === "plain") return plainText;
+    if (viewMode === "clinical") return clinicalText;
+    if (viewMode === "structured") {
+      return `Research Objective: ${sections.background || ""}. Methodology: ${sections.methodology || ""}. Key Findings: ${sections.findings || ""}. Safety Profile: ${sections.safety || ""}. Conclusions: ${sections.conclusion || ""}`;
+    }
+    if (viewMode === "highlights") {
+      return highlights.join(". ");
+    }
+    return plainText;
+  }, [viewMode, plainText, clinicalText, sections, highlights]);
+
+  // Clean text for speech synthesis (remove markdown, symbols)
+  const cleanSpeechText = (raw) => {
+    return raw
+      .replace(/[#*_`~[\]]/g, "")
+      .replace(/\(https?:\/\/[^\)]*\)/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+
+  // Text-To-Speech Handlers
+  const handlePlayTTS = () => {
+    if (!synthRef.current) return;
+
+    if (isPaused) {
+      synthRef.current.resume();
+      setIsPaused(false);
+      setIsPlaying(true);
+      return;
+    }
+
+    synthRef.current.cancel();
+
+    const textToSpeak = cleanSpeechText(currentViewText);
+    if (!textToSpeak) return;
+
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utteranceRef.current = utterance;
+
+    if (selectedVoice) {
+      const voiceObj = availableVoices.find((v) => v.name === selectedVoice);
+      if (voiceObj) utterance.voice = voiceObj;
+    }
+
+    utterance.rate = speechRate;
+    utterance.pitch = 1.0;
+
+    utterance.onboundary = (event) => {
+      if (event.name === "sentence" || event.name === "word") {
+        const charIdx = event.charIndex;
+        const snippet = textToSpeak.substring(charIdx, charIdx + 80).trim();
+        setSpeakingTextSnippet(snippet);
+      }
+    };
+
+    utterance.onstart = () => {
+      setIsPlaying(true);
+      setIsPaused(false);
+    };
+
+    utterance.onend = () => {
+      setIsPlaying(false);
+      setIsPaused(false);
+      setSpeakingTextSnippet("");
+    };
+
+    utterance.onerror = () => {
+      setIsPlaying(false);
+      setIsPaused(false);
+      setSpeakingTextSnippet("");
+    };
+
+    synthRef.current.speak(utterance);
+  };
+
+  const handlePauseTTS = () => {
+    if (!synthRef.current) return;
+    if (isPlaying && !isPaused) {
+      synthRef.current.pause();
+      setIsPaused(true);
+      setIsPlaying(false);
+    }
+  };
+
+  const handleStopTTS = () => {
+    if (!synthRef.current) return;
+    synthRef.current.cancel();
+    setIsPlaying(false);
+    setIsPaused(false);
+    setSpeakingTextSnippet("");
+  };
+
+  const handleRateChange = (newRate) => {
+    setSpeechRate(newRate);
+    if (isPlaying) {
+      // Re-trigger with new speed
+      handleStopTTS();
+      setTimeout(handlePlayTTS, 150);
+    }
+  };
+
   if (loading) {
     return (
       <div className="summary-loading-state">
         <div className="dna-loader">
           <span className="spinner-large" />
         </div>
-        <h3>Synthesizing Multi-Perspective Research Brief...</h3>
-        <p>Extracting PICO parameters, statistical endpoints, and cross-referencing external databases.</p>
+        <h3>Synthesizing Deep Multi-Perspective Research Brief...</h3>
+        <p>Extracting comprehensive trial endpoints, PICO parameters, safety spectrum, and molecular mechanisms.</p>
       </div>
     );
   }
@@ -70,22 +223,104 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
   if (!summaryData) {
     return (
       <div className="empty-summary-prompt">
-        <p>No summary generated yet. Upload a PDF or pick a sample paper to begin.</p>
+        <p>No summary generated yet. Upload a PDF or choose a benchmark paper to begin.</p>
       </div>
     );
   }
 
-  const multi = summaryData.multiview || (typeof summaryData === "object" ? summaryData : null);
-  const plainText = multi?.plain_language || (typeof summaryData === "string" ? summaryData : "");
-  const clinicalText = multi?.clinical_summary || summaryData.summary || plainText;
-  const sections = multi?.structured_sections || {};
-  const pico = multi?.pico || {};
-  const highlights = multi?.key_highlights || [];
-  const evidence = multi?.evidence_grounding || [];
-  const groundedScore = multi?.groundedness_score || 0.92;
-
   return (
     <div className="summary-container">
+      {/* Interactive Text-to-Speech (TTS) Narration Bar */}
+      <div className="tts-narration-bar">
+        <div className="tts-left-group">
+          <div className="tts-badge">
+            <span className="audio-wave-icon">🔊</span>
+            <b>Voice Reader (TTS)</b>
+          </div>
+
+          <div className="tts-playback-controls">
+            {!isPlaying ? (
+              <button className="tts-btn play-btn" onClick={handlePlayTTS} title="Read aloud current summary">
+                ▶ Play Summary
+              </button>
+            ) : (
+              <button className="tts-btn pause-btn" onClick={handlePauseTTS} title="Pause narration">
+                ⏸ Pause
+              </button>
+            )}
+
+            <button
+              className="tts-btn stop-btn"
+              onClick={handleStopTTS}
+              disabled={!isPlaying && !isPaused}
+              title="Stop narration"
+            >
+              ⏹ Stop
+            </button>
+          </div>
+
+          {/* Animated Sound Waves Visualizer */}
+          {isPlaying && (
+            <div className="tts-visualizer" title="Speaking audio playback active">
+              <span className="wave-bar bar-1"></span>
+              <span className="wave-bar bar-2"></span>
+              <span className="wave-bar bar-3"></span>
+              <span className="wave-bar bar-4"></span>
+              <span className="wave-bar bar-5"></span>
+            </div>
+          )}
+        </div>
+
+        <div className="tts-right-group">
+          {/* Reading Speed Selector */}
+          <div className="tts-speed-control">
+            <span className="ctrl-label">Speed:</span>
+            {[0.75, 1.0, 1.25, 1.5].map((rate) => (
+              <button
+                key={rate}
+                className={`speed-pill ${speechRate === rate ? "active" : ""}`}
+                onClick={() => handleRateChange(rate)}
+              >
+                {rate}x
+              </button>
+            ))}
+          </div>
+
+          {/* Voice Dropdown */}
+          {availableVoices.length > 0 && (
+            <div className="tts-voice-control">
+              <span className="ctrl-label">Voice:</span>
+              <select
+                className="voice-select-box"
+                value={selectedVoice}
+                onChange={(e) => {
+                  setSelectedVoice(e.target.value);
+                  if (isPlaying) {
+                    handleStopTTS();
+                    setTimeout(handlePlayTTS, 150);
+                  }
+                }}
+              >
+                {availableVoices.map((v) => (
+                  <option key={v.name} value={v.name}>
+                    {v.name.length > 28 ? v.name.slice(0, 26) + "..." : v.name} ({v.lang})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Real-time Spoken Snippet Highlight Banner */}
+      {isPlaying && speakingTextSnippet && (
+        <div className="tts-live-snippet-banner">
+          <span className="live-dot"></span>
+          <span className="snippet-label">Now Reading:</span>
+          <span className="snippet-text">"{speakingTextSnippet}..."</span>
+        </div>
+      )}
+
       {/* Header controls & Multi-View Switcher */}
       <div className="summary-header-bar">
         <div className="view-switcher-group">
@@ -105,13 +340,13 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
             className={`view-toggle-btn ${viewMode === "structured" ? "active" : ""}`}
             onClick={() => setViewMode("structured")}
           >
-            📑 Structured Sections
+            📑 Detailed Structured Sections
           </button>
           <button
             className={`view-toggle-btn ${viewMode === "highlights" ? "active" : ""}`}
             onClick={() => setViewMode("highlights")}
           >
-            ⚡ Key Discoveries
+            ⚡ Key Discoveries ({highlights.length})
           </button>
         </div>
 
@@ -143,11 +378,15 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
         {viewMode === "plain" && (
           <div className="mode-pane plain-pane">
             <div className="pane-intro">
-              <h4>Patient & Layman Summary</h4>
-              <p>Translates complex clinical jargon into an accessible, clear explanation.</p>
+              <h4>Comprehensive Patient & Layman Research Guide</h4>
+              <p>Translates complex clinical trial data, pharmacological mechanisms, and statistics into clear, accessible language.</p>
             </div>
             <div className="summary-prose-card">
-              <p className="prose-text">{renderInteractiveText(plainText)}</p>
+              {plainText.split("\n\n").map((para, pi) => (
+                <p key={pi} className="prose-text" style={{ marginBottom: "14px", lineHeight: "1.7" }}>
+                  {renderInteractiveText(para)}
+                </p>
+              ))}
             </div>
           </div>
         )}
@@ -155,8 +394,8 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
         {viewMode === "clinical" && (
           <div className="mode-pane clinical-pane">
             <div className="pane-intro">
-              <h4>Clinical & Pharmacological Evaluation</h4>
-              <p>Extracts study design, PICO parameters, and quantitative metrics.</p>
+              <h4>Clinical & Pharmacological Deep Dive</h4>
+              <p>In-depth study design, PICO parameters, statistical efficacy endpoints, and tolerability spectrum.</p>
             </div>
 
             {/* PICO Grid */}
@@ -173,7 +412,7 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
                 <div className="pico-badge">I</div>
                 <div className="pico-info">
                   <h5>Intervention</h5>
-                  <p>{pico.intervention || "Investigational therapeutic drug or procedure."}</p>
+                  <p>{pico.intervention || "Investigational therapeutic drug, molecular target, or dosage regimen."}</p>
                 </div>
               </div>
 
@@ -194,9 +433,13 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
               </div>
             </div>
 
-            <div className="summary-prose-card" style={{ marginTop: "18px" }}>
-              <h5>Synthesis & Evidence</h5>
-              <p className="prose-text">{renderInteractiveText(clinicalText)}</p>
+            <div className="summary-prose-card" style={{ marginTop: "20px" }}>
+              <h5>Comprehensive Clinical Synthesis</h5>
+              {clinicalText.split("\n\n").map((para, pi) => (
+                <p key={pi} className="prose-text" style={{ marginBottom: "14px", lineHeight: "1.7" }}>
+                  {renderInteractiveText(para)}
+                </p>
+              ))}
             </div>
           </div>
         )}
@@ -204,15 +447,15 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
         {viewMode === "structured" && (
           <div className="mode-pane structured-pane">
             <div className="pane-intro">
-              <h4>Structured Sectional Breakdown</h4>
-              <p>Systematic extraction aligned with peer-reviewed scientific reporting standards.</p>
+              <h4>Detailed Structured Scientific Breakdown</h4>
+              <p>Systematic extraction aligned with peer-reviewed scientific reporting standards (CONSORT/STROBE).</p>
             </div>
 
             <div className="structured-sections-stack">
               <div className="section-block">
                 <div className="section-block-header">
                   <span className="section-icon">🎯</span>
-                  <h5>1. Background & Research Objective</h5>
+                  <h5>1. Background & Clinical Rationale</h5>
                 </div>
                 <p>{renderInteractiveText(sections.background || "The study investigates modern biomedical mechanisms and unmet clinical needs.")}</p>
               </div>
@@ -220,9 +463,9 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
               <div className="section-block">
                 <div className="section-block-header">
                   <span className="section-icon">🔬</span>
-                  <h5>2. Methodology & Study Design</h5>
+                  <h5>2. Methodology, Trial Design & Cohorts</h5>
                 </div>
-                <p>{renderInteractiveText(sections.methodology || "Experimental cohorts were evaluated through rigorous laboratory and clinical trial methodologies.")}</p>
+                <p>{renderInteractiveText(sections.methodology || "Experimental cohorts were evaluated through rigorous clinical trial protocols and pharmacological monitoring.")}</p>
               </div>
 
               <div className="section-block">
@@ -233,10 +476,18 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
                 <p>{renderInteractiveText(sections.findings || "The intervention demonstrated distinct biological activity and statistically notable therapeutic endpoints.")}</p>
               </div>
 
+              <div className="section-block safety-block">
+                <div className="section-block-header">
+                  <span className="section-icon">🛡️</span>
+                  <h5>4. Safety Profile & Toxicity Spectrum</h5>
+                </div>
+                <p>{renderInteractiveText(sections.safety || "Treatment-related adverse events and high-grade toxicities were evaluated across treatment arms.")}</p>
+              </div>
+
               <div className="section-block">
                 <div className="section-block-header">
                   <span className="section-icon">💡</span>
-                  <h5>4. Clinical Implications & Conclusions</h5>
+                  <h5>5. Clinical Practice Implications & Conclusions</h5>
                 </div>
                 <p>{renderInteractiveText(sections.conclusion || "These findings provide a foundational basis for advancing clinical therapies and precision medicine.")}</p>
               </div>
@@ -248,7 +499,7 @@ export default function SummaryView({ summaryData, loading, entities = [] }) {
           <div className="mode-pane highlights-pane">
             <div className="pane-intro">
               <h4>Key Takeaway Discoveries</h4>
-              <p>Top quantitative findings, statistical significance, and outcome metrics.</p>
+              <p>Top quantitative findings, statistical significance, hazard ratios, and outcome metrics.</p>
             </div>
 
             <div className="highlights-list">

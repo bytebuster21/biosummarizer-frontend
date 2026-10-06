@@ -71,3 +71,32 @@ export async function askPaperQuestion(id, question) {
   if (!res.ok) throw new Error("Failed to get answer for paper query.");
   return res.json();
 }
+
+export async function getDrugDiscovery(paperId) {
+  const res = await fetch(`${API_URL}/api/papers/${paperId}/drug-discovery`);
+  if (!res.ok) throw new Error("Failed to load drug discovery landscape.");
+  return res.json();
+}
+
+export async function comparePapers(paperId1, paperId2) {
+  const res = await fetch(`${API_URL}/api/papers/compare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paper_id_1: paperId1, paper_id_2: paperId2 }),
+  });
+  if (!res.ok) throw new Error("Failed to compare papers.");
+  return res.json();
+}
+
+export async function compareUploadedPapers(file1, file2) {
+  const formData = new FormData();
+  formData.append("file1", file1);
+  formData.append("file2", file2);
+
+  const res = await fetch(`${API_URL}/api/papers/compare/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) throw new Error("Failed to compare uploaded papers.");
+  return res.json();
+}

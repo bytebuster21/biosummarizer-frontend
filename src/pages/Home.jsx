@@ -10,8 +10,10 @@ import {
 import Navbar from "../components/Navbar";
 import SummaryView from "../components/SummaryView";
 import KnowledgeGraphViewer from "../components/KnowledgeGraphViewer";
+import DrugDiscoveryView from "../components/DrugDiscoveryView";
 import RelatedLiterature from "../components/RelatedLiterature";
 import PaperQA from "../components/PaperQA";
+import PaperCompareView from "../components/PaperCompareView";
 import ExportModal from "../components/ExportModal";
 
 export default function Home() {
@@ -23,7 +25,7 @@ export default function Home() {
   const [summaryData, setSummaryData] = useState(null);
   const [graphData, setGraphData] = useState(null);
   const [entities, setEntities] = useState([]);
-  const [activeTab, setActiveTab] = useState("summary"); // "summary" | "graph" | "literature" | "qa" | "text"
+  const [activeTab, setActiveTab] = useState("summary"); // "summary" | "graph" | "drug_discovery" | "literature" | "qa" | "compare" | "text"
   const [error, setError] = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -110,7 +112,7 @@ export default function Home() {
           </h1>
           <p className="hero-subtext">
             Upload biomedical papers or choose a benchmark clinical trial to generate multi-perspective summaries,
-            interactive semantic knowledge graphs, evidence grounding, and 1-click jumps to NCBI, ClinVar, UniProt, and PubChem.
+            audio narration (TTS), interactive semantic knowledge graphs, disease drug discovery landscapes, and side-by-side paper comparisons.
           </p>
 
           {/* Benchmark Preset Papers Bar */}
@@ -134,7 +136,7 @@ export default function Home() {
           )}
         </section>
 
-        {/* Upload Card */}
+        {/* Upload & Quick Tools Bar */}
         <section className="upload-section-card">
           <div
             className={`drop-zone-box ${dragging ? "dragging" : ""} ${file ? "has-file" : ""}`}
@@ -168,6 +170,21 @@ export default function Home() {
               <p>{file ? "Paper uploaded. Processing..." : "or click to browse from your computer (Max 25MB)"}</p>
               <div className="supported-formats">Supports Clinical Trials, Preprints, Review Papers & PubMed Articles</div>
             </label>
+          </div>
+
+          {/* Quick Dual Comparison Trigger */}
+          <div className="quick-compare-cta">
+            <button
+              className="quick-compare-btn"
+              onClick={() => {
+                setActiveTab("compare");
+                if (!currentPaper && samplePapers.length > 0) {
+                  handleSelectSample("sample-1");
+                }
+              }}
+            >
+              <span>⚖️</span> Compare 2 Papers Side-by-Side <span>→</span>
+            </button>
           </div>
 
           {error && (
@@ -204,6 +221,12 @@ export default function Home() {
                   🕸️ Knowledge Graph
                 </button>
                 <button
+                  className={`ws-tab-btn ${activeTab === "drug_discovery" ? "active" : ""}`}
+                  onClick={() => setActiveTab("drug_discovery")}
+                >
+                  💊 Drug Discovery
+                </button>
+                <button
                   className={`ws-tab-btn ${activeTab === "literature" ? "active" : ""}`}
                   onClick={() => setActiveTab("literature")}
                 >
@@ -213,7 +236,13 @@ export default function Home() {
                   className={`ws-tab-btn ${activeTab === "qa" ? "active" : ""}`}
                   onClick={() => setActiveTab("qa")}
                 >
-                  💬 Ask the Paper (Q&A)
+                  💬 Ask Paper (Q&A)
+                </button>
+                <button
+                  className={`ws-tab-btn ${activeTab === "compare" ? "active" : ""}`}
+                  onClick={() => setActiveTab("compare")}
+                >
+                  ⚖️ Compare Papers
                 </button>
                 <button
                   className={`ws-tab-btn ${activeTab === "text" ? "active" : ""}`}
@@ -241,6 +270,13 @@ export default function Home() {
                 />
               )}
 
+              {activeTab === "drug_discovery" && (
+                <DrugDiscoveryView
+                  paperId={currentPaper?.id}
+                  paperTitle={currentPaper?.title}
+                />
+              )}
+
               {activeTab === "literature" && (
                 <RelatedLiterature paperId={currentPaper?.id} />
               )}
@@ -249,6 +285,12 @@ export default function Home() {
                 <PaperQA
                   paperId={currentPaper?.id}
                   paperTitle={currentPaper?.title}
+                />
+              )}
+
+              {activeTab === "compare" && (
+                <PaperCompareView
+                  currentPaperId={currentPaper?.id}
                 />
               )}
 

@@ -28,6 +28,12 @@ export default function Navbar({ onExportClick, hasData, activeTab, setActiveTab
                 🕸️ Knowledge Graph
               </button>
               <button
+                className={`nav-tab-btn ${activeTab === "drug_discovery" ? "active" : ""}`}
+                onClick={() => setActiveTab("drug_discovery")}
+              >
+                💊 Drug Discovery
+              </button>
+              <button
                 className={`nav-tab-btn ${activeTab === "literature" ? "active" : ""}`}
                 onClick={() => setActiveTab("literature")}
               >
@@ -38,6 +44,12 @@ export default function Navbar({ onExportClick, hasData, activeTab, setActiveTab
                 onClick={() => setActiveTab("qa")}
               >
                 💬 Ask Paper (Q&A)
+              </button>
+              <button
+                className={`nav-tab-btn ${activeTab === "compare" ? "active" : ""}`}
+                onClick={() => setActiveTab("compare")}
+              >
+                ⚖️ Compare Papers
               </button>
             </div>
           )}

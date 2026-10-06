@@ -755,7 +755,19 @@ export default function KnowledgeGraphViewer({ graph, loading }) {
               className={`exp-tab-btn ${activeGuideTab === "overview" ? "active" : ""}`}
               onClick={() => setActiveGuideTab("overview")}
             >
-              ✦ Overview
+              ✦ Mechanistic Overview
+            </button>
+            <button
+              className={`exp-tab-btn ${activeGuideTab === "mechanisms" ? "active" : ""}`}
+              onClick={() => setActiveGuideTab("mechanisms")}
+            >
+              🧬 Paper Biological Narrative
+            </button>
+            <button
+              className={`exp-tab-btn ${activeGuideTab === "hubs" ? "active" : ""}`}
+              onClick={() => setActiveGuideTab("hubs")}
+            >
+              📊 Network Hubs & Centrality
             </button>
             <button
               className={`exp-tab-btn ${activeGuideTab === "legend" ? "active" : ""}`}
@@ -768,6 +780,12 @@ export default function KnowledgeGraphViewer({ graph, loading }) {
               onClick={() => setActiveGuideTab("relations")}
             >
               🔗 Relations & Predicates
+            </button>
+            <button
+              className={`exp-tab-btn ${activeGuideTab === "registries" ? "active" : ""}`}
+              onClick={() => setActiveGuideTab("registries")}
+            >
+              🏛️ Global Registries Guide
             </button>
             <button
               className={`exp-tab-btn ${activeGuideTab === "howTo" ? "active" : ""}`}
@@ -806,6 +824,107 @@ export default function KnowledgeGraphViewer({ graph, loading }) {
                     <strong>ClinVar</strong>, <strong>UniProtKB</strong>, <strong>PubChem</strong>, and <strong>DrugBank</strong>.
                   </p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeGuideTab === "mechanisms" && (
+            <div className="exp-pane mechanisms-pane">
+              <div className="mechanism-story-card">
+                <div className="story-badge">BIOLOGICAL MECHANISM WALKTHROUGH</div>
+                <h4>How Entities in This Paper Mechanistically Interact</h4>
+                <p className="story-intro">
+                  This knowledge graph maps the underlying pharmacological cascade of the research manuscript:
+                </p>
+
+                <div className="cascade-stepper">
+                  <div className="cascade-step">
+                    <div className="step-circle step-drug">1</div>
+                    <div className="step-content">
+                      <h5>Therapeutic Intervention & Chemical Modulators</h5>
+                      <p>
+                        {sanitizedNodes.filter(n => n.type === 'CHEMICAL').map(n => n.name).slice(0, 4).join(', ') || 'Investigational pharmacological agent'}
+                        {' '}serves as the primary therapeutic intervention evaluated in this study, designed to selectively engage molecular targets.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="cascade-step">
+                    <div className="step-circle step-target">2</div>
+                    <div className="step-content">
+                      <h5>Target Gene, Kinase, or Receptor Engagement</h5>
+                      <p>
+                        The therapeutic molecules target key biological nodes including{' '}
+                        {sanitizedNodes.filter(n => n.type === 'GENE_PROTEIN').map(n => n.name).slice(0, 4).join(', ') || 'target proteins and receptor complexes'}.
+                        Inhibition or modulation of these nodes disrupts aberrant cellular survival signaling.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="cascade-step">
+                    <div className="step-circle step-pathway">3</div>
+                    <div className="step-content">
+                      <h5>Downstream Biological Cascades & Cellular Modulation</h5>
+                      <p>
+                        {sanitizedNodes.filter(n => n.type === 'PATHWAY_PROCESS').map(n => n.name).slice(0, 3).join(', ') || 'Target signaling cascades and cellular checkpoints'}
+                        {' '}are modulated, reversing immune escape, suppressing uncontrolled proliferation, or activating protective gene programs.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="cascade-step">
+                    <div className="step-circle step-disease">4</div>
+                    <div className="step-content">
+                      <h5>Pathological Modification & Disease Control</h5>
+                      <p>
+                        Targeting this biological cascade directly addresses the underlying pathophysiology of{' '}
+                        {sanitizedNodes.filter(n => n.type === 'DISEASE').map(n => n.name).slice(0, 3).join(', ') || 'the targeted clinical indication'},
+                        aiming to overcome established driver mechanisms and therapeutic resistance.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="cascade-step">
+                    <div className="step-circle step-outcome">5</div>
+                    <div className="step-content">
+                      <h5>Measured Clinical Efficacy & Safety Endpoints</h5>
+                      <p>
+                        The clinical impact is quantitatively validated via primary and secondary endpoints such as{' '}
+                        {sanitizedNodes.filter(n => n.type === 'CLINICAL_OUTCOME').map(n => n.name).slice(0, 3).join(', ') || 'Overall Survival, Progression-Free Survival, and toxicity profiles'}.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeGuideTab === "hubs" && (
+            <div className="exp-pane hubs-pane">
+              <div className="hubs-header">
+                <h4>Network Topology & Central Hub Entities</h4>
+                <p>Entities with the highest degree centrality act as major biological bottlenecks and pharmacological crossroads:</p>
+              </div>
+
+              <div className="hubs-grid">
+                {sanitizedNodes.slice(0, 6).map((node, i) => (
+                  <div key={node.id} className="hub-card" onClick={() => handleNodeClick(node)}>
+                    <div className="hub-rank">#{i + 1} Hub</div>
+                    <div className="hub-body">
+                      <h5>{node.name}</h5>
+                      <span className="hub-type" style={{ color: TYPE_COLORS[node.type] || '#555' }}>
+                        {node.type.replace(/_/g, ' ')}
+                      </span>
+                      <div className="hub-metrics">
+                        <span>Mentions: <b>{node.frequency || 1}</b></span>
+                        <span>Connections: <b>{node.degree || 1}</b></span>
+                      </div>
+                      <p className="hub-desc">
+                        Highly connected node in this manuscript, serving as a key focal point between clinical outcomes and therapeutic interventions.
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -849,6 +968,37 @@ export default function KnowledgeGraphViewer({ graph, loading }) {
                     <p>{r.desc}</p>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeGuideTab === "registries" && (
+            <div className="exp-pane registries-pane">
+              <div className="registries-grid">
+                <div className="registry-card">
+                  <h4>NCBI Gene & ClinVar</h4>
+                  <p>Comprehensive repository of gene symbols, genomic coordinates, functional annotations, and clinical variant pathogenicity classifications.</p>
+                </div>
+                <div className="registry-card">
+                  <h4>UniProtKB (Swiss-Prot)</h4>
+                  <p>Curated protein sequence and functional database detailing catalytic sites, domains, post-translational modifications, and 3D structural targets.</p>
+                </div>
+                <div className="registry-card">
+                  <h4>PubChem & DrugBank</h4>
+                  <p>Authoritative repositories of chemical structures, pharmacodynamics, mechanism of action, bioassays, and approved vs investigational pharmacology.</p>
+                </div>
+                <div className="registry-card">
+                  <h4>ClinicalTrials.gov</h4>
+                  <p>Global registry of actively recruiting and completed interventional trials, study phases, primary endpoints, and sponsor details.</p>
+                </div>
+                <div className="registry-card">
+                  <h4>KEGG & Reactome</h4>
+                  <p>Curated biological pathway systems mapping signal transduction networks, metabolic cycles, and disease dysregulations.</p>
+                </div>
+                <div className="registry-card">
+                  <h4>COSMIC & OMIM</h4>
+                  <p>Catalogue Of Somatic Mutations In Cancer and Online Mendelian Inheritance in Man, detailing driver mutations and inherited disease phenotypes.</p>
+                </div>
               </div>
             </div>
           )}
